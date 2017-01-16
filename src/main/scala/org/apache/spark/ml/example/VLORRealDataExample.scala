@@ -48,12 +48,16 @@ object VLORRealDataExample {
     println("LR accuracy is:" + accu)
     println(s"Logistic regression coefficients: ${model.coefficients}")
 */
+    println("args 0:=" + args(0) + "  args 1:=" + args(1))
     val vtrainer = new VLogisticRegressionWithGD()
+      .setStepSize(args(0).toDouble)
+      .setNumIterations(args(1).toInt)
       .setColsPerBlock(100)
       .setRowsPerBlock(10)
       .setColPartitions(3)
       .setRowPartitions(3)
       .setRegParam(0.5)
+
     val vmodel = vtrainer.fit(dataset1)
 
     val vresult = vmodel.transform(dataset2)
