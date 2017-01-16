@@ -17,14 +17,15 @@
 
 package org.apache.spark.ml.util
 
+import java.util.concurrent.Executors
+
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.rdd.RDD
 import org.apache.spark.ml.linalg._
+import org.apache.spark.ml.linalg.distributed.DistributedVectorPartitioner
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 import org.apache.spark.ml.util.TestingUtils._
 import org.apache.spark.mllib.util.MLlibTestSparkContext
-
-import scala.reflect.ClassTag
 
 class VUtilsSuite extends SparkFunSuite with MLlibTestSparkContext {
 
@@ -55,7 +56,7 @@ class VUtilsSuite extends SparkFunSuite with MLlibTestSparkContext {
   test("splitArrIntoDV") {
     val arrs = splitArrIntoDV(
       sc, Array(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0), 3, 3)
-      .vecs.collect()
+      .blocks.collect()
 
     assert(arrs(0).toArray === Array(1.0, 2.0, 3.0))
     assert(arrs(1).toArray === Array(4.0, 5.0, 6.0))
@@ -96,101 +97,16 @@ class VUtilsSuite extends SparkFunSuite with MLlibTestSparkContext {
       ))
   }
 
-  test("vertcatSparseVectorIntoCSRMatrix") {
-    assert(vertcatSparseVectorIntoCSRMatrix(Array(
+  test("vertcatSparseVectorIntoMatrix") {
+    assert(vertcatSparseVectorIntoMatrix(Array(
       Vectors.dense(1.0, 2.0, 3.0).toSparse,
       Vectors.dense(8.0, 7.0, 9.0).toSparse
     )).toDense == Matrices.dense(2, 3, Array(1.0, 8.0, 2.0, 7.0, 3.0, 9.0)))
-  }
-
-  def testBlockMatrixHorzZipVecFunc(rows: Int, cols: Int, rowsPerPart: Int, colsPerPart: Int) = {
-    val arrMatrix = Array.tabulate(rows * cols) { idx =>
-      val rowIdx = idx % rows
-      val colIdx = idx / rows
-      ((rowIdx, colIdx),
-        SparseMatrix.fromCOO(1, 2, Array((0, 0, rowIdx.toDouble), (0, 1, colIdx.toDouble)))
-        )
-    }
-    val gridPartitioner = GridPartitionerV2(rows, cols, rowsPerPart, colsPerPart)
-    val blockMatrix = sc.parallelize(arrMatrix).partitionBy(gridPartitioner)
-    val arrVec = Array.tabulate(cols)(idx => idx.toDouble)
-    val dvec = splitArrIntoDV(sc, arrVec, 1, cols)
-    val f = (blockCoords: (Int, Int), sv: SparseMatrix, v: Vector) => {
-      (sv(0, 0), sv(0, 1), v(0))
-    }
-    val res0 = blockMatrixHorzZipVec(blockMatrix, dvec, gridPartitioner, f)
-      .map(x => (x._1._1, x._2))
-    val res = res0.map { v =>
-      (v._1, v._2._1.toInt, v._2._2.toInt, v._2._3.toInt)
-    }.collect().map { v =>
-      assert(v._1 == v._2 && v._3 == v._4)
-      (v._2, v._3)
-    }.sortBy(v => v._1 + v._2 * 1000)
-
-    assert(res === Array.tabulate(rows * cols) { idx =>
-      val rowIdx = idx % rows
-      val colIdx = idx / rows
-      (rowIdx, colIdx)
-    })
-  }
-
-  def testBlockMatrixVertZipVecFunc(rows: Int, cols: Int, rowsPerPart: Int, colsPerPart: Int) = {
-    val arrMatrix = Array.tabulate(rows * cols) { idx =>
-      val rowIdx = idx % rows
-      val colIdx = idx / rows
-      ((rowIdx, colIdx),
-        SparseMatrix.fromCOO(1, 2, Array((0, 0, rowIdx.toDouble), (0, 1, colIdx.toDouble)))
-        )
-    }
-    val gridPartitioner = GridPartitionerV2(rows, cols, rowsPerPart, colsPerPart)
-    val blockMatrix = sc.parallelize(arrMatrix).partitionBy(gridPartitioner)
-    val arrVec = Array.tabulate(rows)(idx => idx.toDouble)
-    val dvec = VUtils.splitArrIntoDV(sc, arrVec, 1, rows)
-    val f = (blockCoords: (Int, Int), sv: SparseMatrix, v: Vector) => {
-      (sv(0, 0), sv(0, 1), v(0))
-    }
-    val res0 = VUtils.blockMatrixVertZipVec(blockMatrix, dvec, gridPartitioner, f)
-      .map(x => (x._1._2, x._2))
-    val res = res0.map { v =>
-      (v._1, v._2._1.toInt, v._2._2.toInt, v._2._3.toInt)
-    }.collect().map { v =>
-      assert(v._1 == v._3 && v._2 == v._4)
-      (v._2, v._3)
-    }.sortBy(v => v._1 + v._2 * 1000)
-
-    assert(res === Array.tabulate(rows * cols) { idx =>
-      val rowIdx = idx % rows
-      val colIdx = idx / rows
-      (rowIdx, colIdx)
-    })
-  }
-
-  test("blockMatrixHorzZipVec") {
-    testBlockMatrixHorzZipVecFunc(5, 4, 2, 3)
-    testBlockMatrixHorzZipVecFunc(8, 6, 2, 3)
-    testBlockMatrixHorzZipVecFunc(3, 5, 3, 5)
-    testBlockMatrixHorzZipVecFunc(15, 4, 6, 1)
-    testBlockMatrixHorzZipVecFunc(15, 3, 6, 2)
-
-    testBlockMatrixHorzZipVecFunc(4, 5, 3, 2)
-    testBlockMatrixHorzZipVecFunc(6, 8, 3, 2)
-    testBlockMatrixHorzZipVecFunc(5, 3, 5, 3)
-    testBlockMatrixHorzZipVecFunc(4, 15, 1, 6)
-    testBlockMatrixHorzZipVecFunc(3, 15, 2, 6)
-  }
-
-  test("blockMatrixVertZipVec") {
-    testBlockMatrixVertZipVecFunc(5, 4, 2, 3)
-    testBlockMatrixVertZipVecFunc(8, 6, 2, 3)
-    testBlockMatrixVertZipVecFunc(3, 5, 3, 5)
-    testBlockMatrixVertZipVecFunc(15, 4, 6, 1)
-    testBlockMatrixVertZipVecFunc(15, 3, 6, 2)
-
-    testBlockMatrixVertZipVecFunc(4, 5, 3, 2)
-    testBlockMatrixVertZipVecFunc(6, 8, 3, 2)
-    testBlockMatrixVertZipVecFunc(5, 3, 5, 3)
-    testBlockMatrixVertZipVecFunc(4, 15, 1, 6)
-    testBlockMatrixVertZipVecFunc(3, 15, 2, 6)
+    assert(vertcatSparseVectorIntoMatrix(Array(
+      Vectors.dense(1.0, 2.0).toSparse,
+      Vectors.dense(3.0, 8.0).toSparse,
+      Vectors.dense(7.0, 9.0).toSparse
+    )).toDense == Matrices.dense(3, 2, Array(1.0, 3.0, 7.0, 2.0, 8.0, 9.0)))
   }
 
   test("vector summarizer") {
@@ -206,5 +122,25 @@ class VUtilsSuite extends SparkFunSuite with MLlibTestSparkContext {
     ).toDenseVector
 
     assert(result ~== Vectors.dense(4.0, 6.0, 5.0) relTol 1e-3)
+  }
+
+  test("concurrent execute tasks") {
+    val res = new Array[Int](10)
+    val pool = Executors.newCachedThreadPool()
+    VUtils.concurrentExecuteTasks(0 until 10, pool, (taskId: Int) => {
+      Thread.sleep(500 + 200 * (taskId % 3))
+      res(taskId) = taskId * 10
+    })
+    assert(res === (0 until 100 by 10).toArray)
+  }
+
+  test("getIteratorZipWithIndex") {
+    val iterator = VUtils.getIteratorZipWithIndex(Iterator(0, 1, 2), -1L + Int.MaxValue)
+    assert(iterator.toArray === Array(
+      (-1L + Int.MaxValue, 0), (0L + Int.MaxValue, 1), (1L + Int.MaxValue, 2)
+    ))
+    intercept[IllegalArgumentException] {
+      VUtils.getIteratorZipWithIndex(Iterator(0, 1, 2), -1L)
+    }
   }
 }

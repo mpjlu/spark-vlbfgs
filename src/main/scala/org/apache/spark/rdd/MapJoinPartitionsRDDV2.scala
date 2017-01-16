@@ -18,12 +18,14 @@
 package org.apache.spark.rdd
 
 import java.io.{IOException, ObjectOutputStream}
-import scala.reflect.ClassTag
 
-import org.apache.spark._
+import org.apache.spark.serializer.Serializer
+import org.apache.spark.{TaskContext, _}
 import org.apache.spark.util.Utils
 
-class MapJoinPartitionsPartition(
+import scala.reflect.ClassTag
+
+class MapJoinPartitionsPartitionV2(
     idx: Int,
     @transient private val rdd1: RDD[_],
     @transient private val rdd2: RDD[_],
@@ -41,30 +43,33 @@ class MapJoinPartitionsPartition(
   }
 }
 
-class MapJoinPartitionsRDD[A: ClassTag, B: ClassTag, V: ClassTag](
+class MapJoinPartitionsRDDV2[A: ClassTag, B: ClassTag, V: ClassTag](
     sc: SparkContext,
     var idxF: (Int) => Array[Int],
     var f: (Int, Iterator[A], Array[(Int, Iterator[B])]) => Iterator[V],
     var rdd1: RDD[A],
-    var rdd2: RDD[B])
+    var rdd2: RDD[B],
+    preservesPartitioning: Boolean = false)
   extends RDD[V](sc, Nil) {
+
+  var rdd2WithPid = rdd2.mapPartitionsWithIndex((pid, iter) => iter.map(x => (pid, x)))
+
+  private val serializer: Serializer = SparkEnv.get.serializer
 
   override def getPartitions: Array[Partition] = {
     val array = new Array[Partition](rdd1.partitions.length)
     for (s1 <- rdd1.partitions) {
       val idx = s1.index
-      array(idx) = new MapJoinPartitionsPartition(idx, rdd1, rdd2, idxF(idx))
+      array(idx) = new MapJoinPartitionsPartitionV2(idx, rdd1, rdd2, idxF(idx))
     }
     array
   }
 
   override def getDependencies: Seq[Dependency[_]] = List(
     new OneToOneDependency(rdd1),
-    new NarrowDependency(rdd2) {
-      override def getParents(partitionId: Int): Seq[Int] = {
-        idxF(partitionId)
-      }
-    }
+    new ShuffleDependency[Int, B, B](
+      rdd2WithPid.asInstanceOf[RDD[_ <: Product2[Int, B]]],
+      new IdentityPartitioner(rdd2WithPid.getNumPartitions), serializer)
   )
 
   override def getPreferredLocations(s: Partition): Seq[String] = {
@@ -74,9 +79,14 @@ class MapJoinPartitionsRDD[A: ClassTag, B: ClassTag, V: ClassTag](
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[V] = {
-    val currSplit = split.asInstanceOf[MapJoinPartitionsPartition]
+    val currSplit = split.asInstanceOf[MapJoinPartitionsPartitionV2]
+    val rdd2Dep = dependencies(1).asInstanceOf[ShuffleDependency[Int, Any, Any]]
     f(currSplit.s1.index, rdd1.iterator(currSplit.s1, context),
-      currSplit.s2Arr.map(s2 => (s2.index, rdd2.iterator(s2, context)))
+      currSplit.s2Arr.map(s2 => (s2.index,
+        SparkEnv.get.shuffleManager
+          .getReader[Int, B](rdd2Dep.shuffleHandle, s2.index, s2.index + 1, context)
+          .read().map(x => x._2)
+        ))
     )
   }
 
@@ -84,7 +94,14 @@ class MapJoinPartitionsRDD[A: ClassTag, B: ClassTag, V: ClassTag](
     super.clearDependencies()
     rdd1 = null
     rdd2 = null
+    rdd2WithPid = null
     idxF = null
     f = null
   }
+}
+
+private[spark] class IdentityPartitioner(val numParts: Int) extends Partitioner {
+  require(numPartitions > 0)
+  override def getPartition(key: Any): Int = key.asInstanceOf[Int]
+  override def numPartitions: Int = numParts
 }

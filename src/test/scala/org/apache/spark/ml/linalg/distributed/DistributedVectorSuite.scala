@@ -15,14 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.spark.ml.linalg
+package org.apache.spark.ml.linalg.distributed
 
-import breeze.linalg.{norm => Bnorm, DenseVector => BDV}
-
+import breeze.linalg.{DenseVector => BDV, norm => Bnorm}
 import org.apache.spark.SparkFunSuite
-
-import org.apache.spark.ml.util.VUtils
+import org.apache.spark.ml.linalg.Vectors
 import org.apache.spark.ml.util.TestingUtils._
+import org.apache.spark.ml.util.VUtils
 import org.apache.spark.mllib.util.MLlibTestSparkContext
 
 class DistributedVectorSuite extends SparkFunSuite with MLlibTestSparkContext {
@@ -97,11 +96,11 @@ class DistributedVectorSuite extends SparkFunSuite with MLlibTestSparkContext {
 
   test("zeros") {
     var res1 = VUtils.zipRDDWithPartitionIDAndCollect(
-      DistributedVectors.zeros(sc, 3, 2, 5).vecs)
+      DistributedVectors.zeros(sc, 3, 2, 5).blocks)
     var res2 = Array((0, Vectors.dense(0.0, 0.0, 0.0)), (1, Vectors.dense(0.0, 0.0)))
     assert(res1 === res2)
     res1 = VUtils.zipRDDWithPartitionIDAndCollect(
-      DistributedVectors.zeros(sc, 3, 2, 7, 1.5).vecs)
+      DistributedVectors.zeros(sc, 3, 2, 7, 1.5).blocks)
     res2 = Array((0, Vectors.dense(0.0, 0.0, 0.0)), (1, Vectors.dense(0.0, 0.0, 0.0, 1.5)))
     assert(res1 === res2)
   }
