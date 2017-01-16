@@ -419,7 +419,7 @@ class VLogisticRegressionWithGD(
 
 
     val rawCoeffs = tempCoeffs // `x` already persisted.
-    assert(rawCoeffs.isPersisted)
+    //assert(rawCoeffs.isPersisted)
 
     /**
      * The coefficients are trained in the scaled space; we're converting them back to
