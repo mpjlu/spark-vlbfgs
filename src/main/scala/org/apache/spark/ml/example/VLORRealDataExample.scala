@@ -51,7 +51,7 @@ object VLORRealDataExample {
     println("args 0:=" + args(0) + "  args 1:=" + args(1))
     val vtrainer = new VLogisticRegressionWithGD()
       .setStepSize(args(0).toDouble)
-      .setNumIterations(args(1).toInt)
+      .setMaxIter(args(1).toInt)
       .setColsPerBlock(args(2).toInt)
       .setRowsPerBlock(args(3).toInt)
       .setColPartitions(3)

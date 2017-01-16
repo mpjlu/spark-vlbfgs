@@ -43,12 +43,11 @@ import org.apache.spark.util.RDDUtils
  */
 class VLogisticRegressionWithGD(
     override val uid: String,
-    private var stepSize: Double,
-    private var numIterations: Int)
+    private var stepSize: Double)
   extends ProbabilisticClassifier[Vector, VLogisticRegression, VLogisticRegressionModel]
     with VLogisticRegressionParams with Logging {
 
-  def this() = this(Identifiable.randomUID("vector-free-logreg"), 1.0, 50)
+  def this() = this(Identifiable.randomUID("vector-free-logreg"), 1.0)
 
   def setStepSize(step:Double): this.type =
   {
@@ -56,11 +55,6 @@ class VLogisticRegressionWithGD(
     this
   }
 
-  def setNumIterations(numIter:Int): this.type =
-  {
-    numIterations = numIter
-    this
-  }
   // column number of each block in feature block matrix
   val colsPerBlock: IntParam = new IntParam(this, "colsPerBlock",
     "column number of each block in feature block matrix.", ParamValidators.gt(0))
@@ -395,7 +389,7 @@ class VLogisticRegressionWithGD(
 
     var i = 1
     var tempCoeffs = initCoeffs
-    while(i < numIterations)
+    while(i < $(maxIter))
       {
         val (loss, gradDV) = costFun.calculate(tempCoeffs)
         val step = stepSize/math.sqrt(i)
