@@ -537,7 +537,7 @@ private[ml] class VBinomialLogisticCostFun(
     val lossAccu = features.blocks.sparkContext.doubleAccumulator
 
     assert(RDDUtils.isRDDPersisted(features.blocks))
-    assert(coeffs.isPersisted)
+//    assert(coeffs.isPersisted)
     assert(RDDUtils.isRDDPersisted(labelAndWeight))
 
     val multipliers: RDD[Vector] = features.horizontalZipVec(coeffs) {
