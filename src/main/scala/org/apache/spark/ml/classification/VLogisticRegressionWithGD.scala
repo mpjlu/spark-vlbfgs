@@ -405,14 +405,14 @@ class VLogisticRegressionWithGD(
           case (pid: Int, partCoeffs: Vector, partGrad: Vector) =>
             val partGradArr = partGrad.toDense.toArray
             val resArrSize = partCoeffs.size
-            val res = Array.fill(resArrSize)(0.0)
+            //val res = Array.fill(resArrSize)(0.0)
             partCoeffs.foreachActive { case (idx: Int, value: Double) =>
-              res(idx) = value * (1.0 - step * $(regParam))
-              res(idx) -= step * partGradArr(idx)
+              val res = value * (1.0 - step * $(regParam))
+              partGradArr(idx) = res - step * partGradArr(idx)
             }
-            Vectors.dense(res)
+            Vectors.dense(partGradArr)
         }.compressed
-         .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
+        // .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
         i+=1
       }
 
