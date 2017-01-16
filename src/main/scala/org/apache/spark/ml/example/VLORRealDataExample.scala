@@ -17,7 +17,8 @@
 
 package org.apache.spark.ml.example
 
-import org.apache.spark.ml.classification.{LogisticRegression, VLogisticRegression}
+import org.apache.spark.ml.classification.{LogisticRegression, VLogisticRegression, VLogisticRegressionWithGD}
+import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.sql.{Dataset, SparkSession}
 
 
@@ -33,13 +34,21 @@ object VLORRealDataExample {
     val sc = spark.sparkContext
 
     val dataset1: Dataset[_] = spark.read.format("libsvm").load("data/a9a")
-
+    val dataset2: Dataset[_] = spark.read.format("libsvm").load("data/a9a.t")
+    val eva = new MulticlassClassificationEvaluator().setMetricName("accuracy")
+/*
     val trainer = new LogisticRegression()
       .setFitIntercept(false)
       .setRegParam(0.5)
     val model = trainer.fit(dataset1)
 
-    val vtrainer = new VLogisticRegression()
+    val result = model.transform(dataset2)
+
+    val accu = eva.evaluate(result)
+    println("LR accuracy is:" + accu)
+    println(s"Logistic regression coefficients: ${model.coefficients}")
+*/
+    val vtrainer = new VLogisticRegressionWithGD()
       .setColsPerBlock(100)
       .setRowsPerBlock(10)
       .setColPartitions(3)
@@ -47,8 +56,12 @@ object VLORRealDataExample {
       .setRegParam(0.5)
     val vmodel = vtrainer.fit(dataset1)
 
+    val vresult = vmodel.transform(dataset2)
+    val vaccu = eva.evaluate(vresult)
+
+    println("VLR accuracy is:" + vaccu)
     println(s"VLogistic regression coefficients: ${vmodel.coefficients}")
-    println(s"Logistic regression coefficients: ${model.coefficients}")
+
 
     sc.stop()
   }
