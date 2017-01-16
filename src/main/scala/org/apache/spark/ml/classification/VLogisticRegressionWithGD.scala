@@ -398,6 +398,7 @@ class VLogisticRegressionWithGD(override val uid: String)
             }
             Vectors.dense(res)
         }.compressed
+         .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
         i+=1
       }
 
