@@ -52,7 +52,7 @@ object VLORRealDataExample {
       trainer.optimizer
           .setStepSize(args(0).toDouble)
           .setNumIterations(args(1).toInt)
-          .setRegParam(0.5)
+          .setRegParam(args(4).toDouble)
           .setMiniBatchFraction(1.0)
 
     val model = trainer.run(rdd1)
@@ -80,7 +80,7 @@ object VLORRealDataExample {
       .setRowsPerBlock(args(3).toInt)
       .setColPartitions(3)
       .setRowPartitions(3)
-      .setRegParam(0.5)
+      .setRegParam(args(4).toDouble)
 
     val vmodel = vtrainer.fit(dataset1)
 

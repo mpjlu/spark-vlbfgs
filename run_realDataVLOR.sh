@@ -4,4 +4,4 @@ spark-submit \
        --master spark://sr576:7077 \
        --class org.apache.spark.ml.example.VLORRealDataExample \
        target/spark-vlbfgs-0.1-SNAPSHOT.jar \
-       1.0 40 100 10000 
+       1.0 100 100 10000 0 
