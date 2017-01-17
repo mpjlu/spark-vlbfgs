@@ -177,7 +177,7 @@ class VLogisticRegressionWithGD(
    */
   def setStandardization(value: Boolean): this.type = set(standardization, value)
 
-  setDefault(standardization -> true)
+  setDefault(standardization -> false)
 
   /**
    * Whether to fit an intercept term.
@@ -331,9 +331,9 @@ class VLogisticRegressionWithGD(
           ((rowBlockIdx, colBlockIdx), matrix)
         }
 
-    val rawFeatures = new VBlockMatrix(rowsPerBlockParam, colsPerBlockParam, rawFeaturesBlocks,
-      gridPartitioner)
-
+    val features = new VBlockMatrix(rowsPerBlockParam, colsPerBlockParam, rawFeaturesBlocks,
+      gridPartitioner).persist(StorageLevel.MEMORY_AND_DISK)
+/*
     val features: VBlockMatrix = rawFeatures.horizontalZipVecMap(featuresStd) {
       (blockCoords: (Int, Int), sm: SparseMatrix, partFeatureStdVector: Vector) =>
         val partFeatureStdArr = partFeatureStdVector.asInstanceOf[DenseVector].values
@@ -345,20 +345,18 @@ class VLogisticRegressionWithGD(
         }
         SparseMatrix.fromCOO(sm.numCols, sm.numRows, arrBuf).transpose
     }.persist(StorageLevel.MEMORY_AND_DISK)
-
+*/
     val fitInterceptParam = $(fitIntercept)
     val regParamL1 = $(elasticNetParam) * $(regParam)
     val regParamL2 = (1.0 - $(elasticNetParam)) * $(regParam)
 
-    val costFun = new VBinomialLogisticCostFun(
+    val costFun = new VBinomialLogisticCostFunWithGD(
       features,
       numFeatures,
       numInstances,
       labelAndWeight,
       weightSum,
       $(standardization),
-      featuresStd,
-      regParamL2,
       fitInterceptParam,
       $(eagerPersist))
 
@@ -439,7 +437,8 @@ class VLogisticRegressionWithGD(
             (fitInterceptParam && pid == colBlocks - 1 && idx == partCoeffs.size - 1)
           if (!isIntercept) {
             if (partFeatursStdArr(idx) != 0.0) {
-              res(idx) = value / partFeatursStdArr(idx)
+              //res(idx) = value / partFeatursStdArr(idx)
+              res(idx) = value
             }
           } else {
             interceptValAccu.add(value)
@@ -457,5 +456,125 @@ class VLogisticRegressionWithGD(
   }
 
   override def copy(extra: ParamMap): VLogisticRegression = defaultCopy(extra)
+}
+
+private[ml] class VBinomialLogisticCostFunWithGD(
+                                            _features: VBlockMatrix,
+                                            _numFeatures: Long,
+                                            _numInstances: Long,
+                                            _labelAndWeight: RDD[(Array[Double], Array[Double])],
+                                            _weightSum: Double,
+                                            _standardization: Boolean,
+                                            _fitIntercept: Boolean,
+                                            eagerPersist: Boolean) extends VDiffFunction(eagerPersist) {
+
+  // Calculates both the value and the gradient at a point
+  override def calculate(coeffs: DistributedVector): (Double, DistributedVector) = {
+
+    val features: VBlockMatrix = _features
+    val numFeatures: Long = _numFeatures
+    val numInstances: Long = _numInstances
+    val rowsPerBlock = features.rowsPerBlock
+    val colsPerBlock = features.colsPerBlock
+    val labelAndWeight: RDD[(Array[Double], Array[Double])] = _labelAndWeight
+    val weightSum: Double = _weightSum
+    val rowBlocks: Int = features.gridPartitioner.rowBlocks
+    val colBlocks: Int = features.gridPartitioner.colBlocks
+    val standardization: Boolean = _standardization
+    val fitIntercept = _fitIntercept
+
+    val lossAccu = features.blocks.sparkContext.doubleAccumulator
+
+    assert(RDDUtils.isRDDPersisted(features.blocks))
+    //    assert(coeffs.isPersisted)
+    assert(RDDUtils.isRDDPersisted(labelAndWeight))
+
+    val multipliers: RDD[Vector] = features.horizontalZipVec(coeffs) {
+      (blockCoords: (Int, Int), matrix: SparseMatrix, partCoeffs: Vector) =>
+        val intercept = if (fitIntercept && blockCoords._2 == colBlocks - 1) {
+          // Get intercept from the last element of coefficients vector
+          partCoeffs(partCoeffs.size - 1)
+        } else 0.0
+        val partMarginArr = Array.fill[Double](matrix.numRows)(intercept)
+        matrix.foreachActive { case (i: Int, j: Int, v: Double) =>
+          partMarginArr(i) += (partCoeffs(j) * v)
+        }
+        Vectors.dense(partMarginArr).compressed
+    }.map { case ((rowBlockIdx: Int, colBlockIdx: Int), partMargins: Vector) =>
+      (rowBlockIdx, partMargins)
+    }.aggregateByKey(new VectorSummarizer, new DistributedVectorPartitioner(rowBlocks))(
+      (s, v) => s.add(v),
+      (s1, s2) => s1.merge(s2)
+    ).zip(labelAndWeight)
+      .map {
+        case ((rowBlockIdx: Int, marginSummarizer: VectorSummarizer),
+        (labelArr: Array[Double], weightArr: Array[Double])) =>
+          val marginArr = marginSummarizer.toArray
+          var lossSum = 0.0
+          val multiplierArr = Array.fill(marginArr.length)(0.0)
+          var i = 0
+          while (i < marginArr.length) {
+            val label = labelArr(i)
+            val margin = -1.0 * marginArr(i)
+            val weight = weightArr(i)
+            if (label > 0) {
+              lossSum += weight * MLUtils.log1pExp(margin)
+            } else {
+              lossSum += weight * (MLUtils.log1pExp(margin) - margin)
+            }
+            multiplierArr(i) = weight * (1.0 / (1.0 + math.exp(margin)) - label)
+            i = i + 1
+          }
+          lossAccu.add(lossSum)
+          Vectors.dense(multiplierArr)
+      }
+
+    // here must eager persist the RDD, because we need the lossAccu value now.
+    val multipliersDV: DistributedVector =
+    new DistributedVector(multipliers, rowsPerBlock, rowBlocks, numInstances)
+      .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
+
+    val lossSum = lossAccu.value / weightSum
+
+    val grad: RDD[Vector] = features.verticalZipVec(multipliersDV) {
+      (blockCoords: (Int, Int), matrix: SparseMatrix, partMultipliers: Vector) =>
+        val partGradArr = if (fitIntercept && blockCoords._2 == colBlocks - 1) {
+          val arr = Array.fill[Double](matrix.numCols + 1)(0.0)
+          arr(arr.length - 1) = partMultipliers.toArray.sum
+          arr
+        } else {
+          Array.fill[Double](matrix.numCols)(0.0)
+        }
+        matrix.foreachActive { case (i: Int, j: Int, v: Double) =>
+          partGradArr(j) += (partMultipliers(i) * v)
+        }
+        Vectors.dense(partGradArr).compressed
+    }.map { case ((rowBlockIdx: Int, colBlockIdx: Int), partGrads: Vector) =>
+      (colBlockIdx, partGrads)
+    }.aggregateByKey(new VectorSummarizer, new DistributedVectorPartitioner(colBlocks))(
+      (s, v) => s.add(v),
+      (s1, s2) => s1.merge(s2)
+    ).map {
+      case (colBlockIdx: Int, partGradsSummarizer: VectorSummarizer) =>
+        val partGradsArr = partGradsSummarizer.toArray
+        var i = 0
+        while (i < partGradsArr.length) {
+          partGradsArr(i) /= weightSum
+          i += 1
+        }
+        Vectors.dense(partGradsArr)
+    }
+
+    val gradDV: DistributedVector = new DistributedVector(grad, colsPerBlock, colBlocks,
+      if (fitIntercept) numFeatures + 1 else numFeatures
+    ).persist(StorageLevel.MEMORY_AND_DISK, eager = eagerPersist)
+
+
+    // because gradDVWithReg already eagerly persisted, now we can release multipliersDV & gradDV
+    multipliersDV.unpersist()
+    gradDV.unpersist()
+
+    (0, gradDV)
+  }
 }
 
