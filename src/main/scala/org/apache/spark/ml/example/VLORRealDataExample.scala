@@ -92,7 +92,7 @@ object VLORRealDataExample {
     }
 
     val vnum1 = vrdd.filter(_._1 == 1).count()
-    val vnum0 = vrdd.count() - num1
+    val vnum0 = vrdd.count() - vnum1
     println("VLR predicted number of 1:" + vnum1 + "number of 0: " + vnum0)
     println("VLR accuracy is:" + vaccu)
     println(s"VLogistic regression coefficients: ${vmodel.coefficients}")
