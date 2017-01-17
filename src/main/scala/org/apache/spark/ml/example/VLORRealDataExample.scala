@@ -22,6 +22,10 @@ import org.apache.spark.ml.classification.{LogisticRegression, VLogisticRegressi
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.mllib.util.MLUtils._
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.DoubleType
+import org.apache.spark.sql.{Dataset, Row}
+
 
 object VLORRealDataExample {
 
@@ -60,8 +64,10 @@ object VLORRealDataExample {
       }.count()
       // At least 83% of the predictions should be on.
       val accu = (rdd2.count() - numOffPredictions).toDouble / rdd2.count()
+      val num1 = predictions.filter(_ == 1).count()
+      val num0 = predictions.count - num1
 
-
+    println("LR predicted number of 1:" + num1 + "number of 0:" + num0)
     println("LR accuracy is:" + accu)
 
 
@@ -81,6 +87,13 @@ object VLORRealDataExample {
     val vresult = vmodel.transform(dataset2)
     val vaccu = eva.evaluate(vresult)
 
+    val vrdd = vresult.select(col("prediction"), col("label").cast(DoubleType)).rdd.map {
+      case Row(prediction: Double, label: Double) => (prediction, label)
+    }
+
+    val vnum1 = vrdd.filter(_._1 == 1).count()
+    val vnum0 = vrdd.count() - num1
+    println("VLR predicted number of 1:" + vnum1 + "number of 0: " + vnum0)
     println("VLR accuracy is:" + vaccu)
     println(s"VLogistic regression coefficients: ${vmodel.coefficients}")
 
