@@ -17,10 +17,11 @@
 
 package org.apache.spark.ml.example
 
+import org.apache.spark.mllib.classification.LogisticRegressionWithSGD
 import org.apache.spark.ml.classification.{LogisticRegression, VLogisticRegression, VLogisticRegressionWithGD}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import org.apache.spark.sql.{Dataset, SparkSession}
-
+import org.apache.spark.mllib.util.MLUtils._
 
 object VLORRealDataExample {
 
@@ -35,20 +36,37 @@ object VLORRealDataExample {
 
     val dataset1: Dataset[_] = spark.read.format("libsvm").load("data/a9a")
     val dataset2: Dataset[_] = spark.read.format("libsvm").load("data/a9a.t")
-    val eva = new MulticlassClassificationEvaluator().setMetricName("accuracy")
-/*
-    val trainer = new LogisticRegression()
-      .setFitIntercept(false)
-      .setRegParam(0.5)
-    val model = trainer.fit(dataset1)
 
-    val result = model.transform(dataset2)
+    val rdd1 = loadLibSVMFile(sc, "data/a9a")
+    val rdd2 = loadLibSVMFile(sc, "data/a9a.t")
 
-    val accu = eva.evaluate(result)
-    println("LR accuracy is:" + accu)
-    println(s"Logistic regression coefficients: ${model.coefficients}")
-*/
     println("args 0:=" + args(0) + "  args 1:=" + args(1))
+
+    val trainer = new LogisticRegressionWithSGD()
+      .setIntercept(true)
+
+      trainer.optimizer
+          .setStepSize(args(0).toDouble)
+          .setNumIterations(args(1).toInt)
+          .setRegParam(0.5)
+          .setMiniBatchFraction(1.0)
+
+    val model = trainer.run(rdd1)
+
+    val predictions = model.predict(rdd2.map(_.features))
+
+      val numOffPredictions = predictions.zip(rdd2).filter { case (prediction, expected) =>
+        prediction != expected.label
+      }.count()
+      // At least 83% of the predictions should be on.
+      val accu = (rdd2.count() - numOffPredictions).toDouble / rdd2.count()
+
+
+    println("LR accuracy is:" + accu)
+
+
+
+    val eva = new MulticlassClassificationEvaluator().setMetricName("accuracy")
     val vtrainer = new VLogisticRegressionWithGD()
       .setStepSize(args(0).toDouble)
       .setMaxIter(args(1).toInt)
