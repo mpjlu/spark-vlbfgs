@@ -40,7 +40,7 @@ object VLORRealDataExample {
 
     val dataset1: Dataset[_] = spark.read.format("libsvm").load("data/a9a")
     val dataset2: Dataset[_] = spark.read.format("libsvm").load("data/a9a.t")
-
+/*
     val rdd1 = loadLibSVMFile(sc, "data/a9a")
     val rdd2 = loadLibSVMFile(sc, "data/a9a.t")
 
@@ -69,7 +69,7 @@ object VLORRealDataExample {
 
     println("LR predicted number of 1:" + num1 + "number of 0:" + num0)
     println("LR accuracy is:" + accu)
-
+*/
 
 
     val eva = new MulticlassClassificationEvaluator().setMetricName("accuracy")
