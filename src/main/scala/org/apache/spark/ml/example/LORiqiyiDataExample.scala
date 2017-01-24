@@ -27,23 +27,22 @@ import org.apache.spark.sql.types.DoubleType
 import org.apache.spark.sql.{Dataset, Row}
 
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.ml.linalg.{Vector, Vectors}
-import org.apache.spark.ml.feature.LabeledPoint
+import org.apache.spark.mllib.linalg.{Vector, Vectors}
+import org.apache.spark.mllib.regression._
 
-object VLORRealDataExample {
+
+object LORiqiyiDataExample {
 
   // https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/binary.html#a9a
   def main(args: Array[String]) = {
     val spark = SparkSession
       .builder()
-      .appName("VLogistic Regression real data example")
+      .appName("Logistic Regression real data example")
       .getOrCreate()
 
     val sc = spark.sparkContext
 
-    val dataset1: Dataset[_] = spark.read.format("libsvm").load("data/a9a")
-    val dataset2: Dataset[_] = spark.read.format("libsvm").load("data/a9a.t")
-   /* 
+    
     val rawData = sc.textFile("data/iqiyi_ios", 70).map(_.split("\\s")).map(x => {
       if (x(0).toInt > 3)
         x(0) = "1"
@@ -59,16 +58,9 @@ object VLORRealDataExample {
     println("length: " + length)
     val training = rawData.map{case(label, v) => LabeledPoint(label, Vectors.sparse(length, v.map(_._1), v.map(_._2)))}
     training.cache()
-    
-    import spark.implicits._
-    //val iqiyi_dataset = spark.createDataset(training)
-    val iqiyi_dataset = training.toDS()
-*/
-//    val rdd1 = loadLibSVMFile(sc, "data/a9a")
-//    val rdd2 = loadLibSVMFile(sc, "data/a9a.t")
 
     println("args 0:=" + args(0) + "  args 1:=" + args(1))
-/*
+
     val trainer = new LogisticRegressionWithSGD()
       .setIntercept(true)
 
@@ -79,7 +71,7 @@ object VLORRealDataExample {
           .setMiniBatchFraction(1.0)
 
     val model = trainer.run(training)
-
+/*
     val predictions = model.predict(rdd2.map(_.features))
 
       val numOffPredictions = predictions.zip(rdd2).filter { case (prediction, expected) =>
@@ -92,34 +84,6 @@ object VLORRealDataExample {
 
     println("LR predicted number of 1:" + num1 + "number of 0:" + num0)
     println("LR accuracy is:" + accu)
-*/
-
-
-    val eva = new MulticlassClassificationEvaluator().setMetricName("accuracy")
-    val vtrainer = new VLogisticRegressionWithGD()
-      .setStepSize(args(0).toDouble)
-      .setMaxIter(args(1).toInt)
-      .setColsPerBlock(args(2).toInt)
-      .setRowsPerBlock(args(3).toInt)
-      .setColPartitions(3)
-      .setRowPartitions(3)
-      .setRegParam(args(4).toDouble)
-
-//    val vmodel = vtrainer.fit(iqiyi_dataset.as[LabeledPoint])
-    val vmodel = vtrainer.fit(dataset1)
-/*
-    val vresult = vmodel.transform(dataset2)
-    val vaccu = eva.evaluate(vresult)
-
-    val vrdd = vresult.select(col("prediction"), col("label").cast(DoubleType)).rdd.map {
-      case Row(prediction: Double, label: Double) => (prediction, label)
-    }
-
-    val vnum1 = vrdd.filter(_._1 == 1).count()
-    val vnum0 = vrdd.count() - vnum1
-    println("VLR predicted number of 1:" + vnum1 + "number of 0: " + vnum0)
-    println("VLR accuracy is:" + vaccu)
-    println(s"VLogistic regression coefficients: ${vmodel.coefficients}")
 */
 
     sc.stop()

@@ -34,7 +34,7 @@ class VBlockMatrix(
   ) {
 
   final val mapJoinPartitionsShuffleRdd2 =
-    System.getProperty("vflbfgs.mapJoinPartitions.shuffleRdd2", "false").toBoolean
+    System.getProperty("vflbfgs.mapJoinPartitions.shuffleRdd2", "true").toBoolean
 
   def horizontalZipVec[T: ClassTag](vec: DistributedVector)(
       f: (((Int, Int), SparseMatrix, Vector) => T)

@@ -30,7 +30,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 import org.apache.spark.ml.feature.LabeledPoint
 
-object VLORRealDataExample {
+object VLORiqiyiDataExample {
 
   // https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/binary.html#a9a
   def main(args: Array[String]) = {
@@ -41,9 +41,6 @@ object VLORRealDataExample {
 
     val sc = spark.sparkContext
 
-    val dataset1: Dataset[_] = spark.read.format("libsvm").load("data/a9a")
-    val dataset2: Dataset[_] = spark.read.format("libsvm").load("data/a9a.t")
-   /* 
     val rawData = sc.textFile("data/iqiyi_ios", 70).map(_.split("\\s")).map(x => {
       if (x(0).toInt > 3)
         x(0) = "1"
@@ -63,37 +60,8 @@ object VLORRealDataExample {
     import spark.implicits._
     //val iqiyi_dataset = spark.createDataset(training)
     val iqiyi_dataset = training.toDS()
-*/
-//    val rdd1 = loadLibSVMFile(sc, "data/a9a")
-//    val rdd2 = loadLibSVMFile(sc, "data/a9a.t")
 
     println("args 0:=" + args(0) + "  args 1:=" + args(1))
-/*
-    val trainer = new LogisticRegressionWithSGD()
-      .setIntercept(true)
-
-      trainer.optimizer
-          .setStepSize(args(0).toDouble)
-          .setNumIterations(args(1).toInt)
-          .setRegParam(args(4).toDouble)
-          .setMiniBatchFraction(1.0)
-
-    val model = trainer.run(training)
-
-    val predictions = model.predict(rdd2.map(_.features))
-
-      val numOffPredictions = predictions.zip(rdd2).filter { case (prediction, expected) =>
-        prediction != expected.label
-      }.count()
-      // At least 83% of the predictions should be on.
-      val accu = (rdd2.count() - numOffPredictions).toDouble / rdd2.count()
-      val num1 = predictions.filter(_ == 1).count()
-      val num0 = predictions.count - num1
-
-    println("LR predicted number of 1:" + num1 + "number of 0:" + num0)
-    println("LR accuracy is:" + accu)
-*/
-
 
     val eva = new MulticlassClassificationEvaluator().setMetricName("accuracy")
     val vtrainer = new VLogisticRegressionWithGD()
@@ -105,8 +73,7 @@ object VLORRealDataExample {
       .setRowPartitions(3)
       .setRegParam(args(4).toDouble)
 
-//    val vmodel = vtrainer.fit(iqiyi_dataset.as[LabeledPoint])
-    val vmodel = vtrainer.fit(dataset1)
+    val vmodel = vtrainer.fit(iqiyi_dataset.as[LabeledPoint])
 /*
     val vresult = vmodel.transform(dataset2)
     val vaccu = eva.evaluate(vresult)

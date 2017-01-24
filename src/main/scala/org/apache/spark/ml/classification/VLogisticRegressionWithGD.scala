@@ -391,6 +391,7 @@ class VLogisticRegressionWithGD(
       {
         val (loss, gradDV) = costFun.calculate(tempCoeffs)
         val step = stepSize/math.sqrt(i)
+        tempCoeffs.unpersist()
         tempCoeffs = tempCoeffs.zipPartitionsWithIndex(
           gradDV, tempCoeffs.sizePerBlock, numFeatures
         ) {
@@ -404,7 +405,7 @@ class VLogisticRegressionWithGD(
             }
             Vectors.dense(partGradArr)
         }.compressed
-        // .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
+          .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
         i+=1
       }
 
@@ -532,7 +533,7 @@ private[ml] class VBinomialLogisticCostFunWithGD(
     // here must eager persist the RDD, because we need the lossAccu value now.
     val multipliersDV: DistributedVector =
     new DistributedVector(multipliers, rowsPerBlock, rowBlocks, numInstances)
-      .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
+    //  .persist(StorageLevel.MEMORY_AND_DISK, eager = true)
 
     val lossSum = lossAccu.value / weightSum
 
@@ -567,12 +568,13 @@ private[ml] class VBinomialLogisticCostFunWithGD(
 
     val gradDV: DistributedVector = new DistributedVector(grad, colsPerBlock, colBlocks,
       if (fitIntercept) numFeatures + 1 else numFeatures
-    ).persist(StorageLevel.MEMORY_AND_DISK, eager = eagerPersist)
+    )
+  //.persist(StorageLevel.MEMORY_AND_DISK, eager = eagerPersist)
 
 
     // because gradDVWithReg already eagerly persisted, now we can release multipliersDV & gradDV
-    multipliersDV.unpersist()
-    gradDV.unpersist()
+    //multipliersDV.unpersist()
+    //gradDV.unpersist()
 
     (0, gradDV)
   }
